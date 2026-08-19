@@ -231,7 +231,10 @@ def _extrair_odds_under(resultados: list) -> dict:
     grupo_atual = ""
     selecao_atual = None  # "Over" ou "Under", da última MA vista
 
-    termos_grupo_gols = ["goals over/under", "total goals", "match goals"]
+    termos_grupo_gols = [
+        "goals over/under", "total goals", "match goals",
+        "asian total goals", "goal line", "asian goals",
+    ]
     termos_grupo_excluir = ["corner", "card", "shootout", "penalt", "booking"]
 
     for item in resultados:

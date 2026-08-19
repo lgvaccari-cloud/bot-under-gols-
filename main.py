@@ -33,10 +33,16 @@ def liga_excluida(nome_liga: str) -> bool:
 
 
 def dentro_da_janela_de_confirmacao(minuto_estimado) -> bool:
+    """
+    True a partir de (MINUTO_GATILHO - JANELA_CONFIRMACAO_MINUTOS) em
+    diante, até MINUTO_LIMITE_RECHECK -- ou seja, começamos a checar
+    um pouco antes do gatilho (pra não perder o momento exato) e
+    continuamos checando a cada ciclo até o limite, não só uma vez.
+    """
     if minuto_estimado is None:
         return False
-    diff = abs(minuto_estimado - config.MINUTO_GATILHO)
-    return diff <= config.JANELA_CONFIRMACAO_MINUTOS
+    inicio = config.MINUTO_GATILHO - config.JANELA_CONFIRMACAO_MINUTOS
+    return inicio <= minuto_estimado <= config.MINUTO_LIMITE_RECHECK
 
 
 def processar_jogo(jogo: dict, est: dict, forcar_teste: bool = False) -> None:
@@ -45,11 +51,19 @@ def processar_jogo(jogo: dict, est: dict, forcar_teste: bool = False) -> None:
         return
     if not jogo["jogo_comecou"]:
         return
+
+    # checagem BARATA (sem gastar API): se o placar já não é mais 0x0,
+    # o jogo nunca mais vai bater o padrão -- marca como verificado e
+    # para de gastar chamadas com ele, sem precisar confirmar odd.
+    if not forcar_teste and (jogo["gols_casa"], jogo["gols_fora"]) != config.PLACAR_GATILHO:
+        estado.marcar_jogo_verificado(est, fi)
+        return
+
     if not forcar_teste and not dentro_da_janela_de_confirmacao(jogo["minuto_estimado"]):
-        return  # ainda longe do gatilho (ou já passou muito) -- barato, sem chamada extra
+        return  # ainda longe do gatilho, ou já passou do limite de recheck
 
     # a partir daqui vale a pena gastar uma chamada de API pra confirmar
-    # o minuto exato e, se bater o padrão, já pegar as odds junto
+    # o minuto exato e as odds atuais
     try:
         detalhe = betsapi_client.obter_detalhe_evento(fi)
     except Exception as e:
@@ -58,8 +72,6 @@ def processar_jogo(jogo: dict, est: dict, forcar_teste: bool = False) -> None:
 
     minuto_exato = detalhe["minuto_exato"]
 
-    # DEBUG temporário: se não conseguimos calcular o minuto, mostra a
-    # resposta bruta pra diagnosticar o formato real dos campos.
     if minuto_exato is None:
         print(f"[debug] Não consegui calcular minuto exato do jogo {fi} "
               f"({jogo['time_casa']} x {jogo['time_fora']}). "
@@ -68,18 +80,21 @@ def processar_jogo(jogo: dict, est: dict, forcar_teste: bool = False) -> None:
             return
 
     if not forcar_teste and minuto_exato < config.MINUTO_GATILHO:
-        return  # ainda não chegou -- tenta de novo no próximo ciclo
+        return  # ainda não chegou no minuto exato -- tenta de novo no próximo ciclo
 
-    # a partir daqui, ou bate o padrão agora, ou nunca mais vai bater
-    # (minuto só cresce) -- marca como verificado de qualquer forma
-    estado.marcar_jogo_verificado(est, fi)
+    if not forcar_teste and minuto_exato > config.MINUTO_LIMITE_RECHECK:
+        # passou do limite de tentativas -- desiste desse jogo
+        estado.marcar_jogo_verificado(est, fi)
+        return
 
     placar_bate = (jogo["gols_casa"], jogo["gols_fora"]) == config.PLACAR_GATILHO
     if not forcar_teste and not placar_bate:
+        estado.marcar_jogo_verificado(est, fi)
         return
 
     odds = detalhe["odds_under"]
-    print(f"[debug] Odds encontradas pro jogo {fi}: {odds}")
+    descricao_debug = f"{jogo['time_casa']} x {jogo['time_fora']}"
+    print(f"[debug] Odds encontradas pro jogo {fi} ({descricao_debug}, minuto {minuto_exato}): {odds}")
 
     # só entram no alerta/simulação as linhas cuja odd está dentro da
     # faixa configurada (ODD_MINIMA a ODD_MAXIMA) -- fora da faixa,
@@ -90,9 +105,13 @@ def processar_jogo(jogo: dict, est: dict, forcar_teste: bool = False) -> None:
     }
 
     if not linhas_na_faixa and not forcar_teste:
-        print(f"[debug] Nenhuma linha dentro da faixa de odd "
-              f"({config.ODD_MINIMA}-{config.ODD_MAXIMA}) pro jogo {fi}, sem alerta.")
-        return
+        print(f"[debug] Nenhuma linha na faixa de odd pro jogo {fi} no minuto {minuto_exato} "
+              f"-- tenta de novo no próximo ciclo (ainda dentro do limite de recheck).")
+        return  # NÃO marca como verificado -- tenta de novo no próximo ciclo
+
+    # a partir daqui, ou disparou o alerta, ou (modo teste) segue mesmo
+    # sem linha -- de qualquer forma, esse jogo está resolvido
+    estado.marcar_jogo_verificado(est, fi)
 
     minuto_exibido = minuto_exato if minuto_exato is not None else jogo["minuto_estimado"]
     prefixo_teste = "🧪 [MODO TESTE — ignora placar/minuto real] " if forcar_teste else ""
