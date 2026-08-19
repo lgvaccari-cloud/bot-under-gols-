@@ -148,6 +148,14 @@ def obter_detalhe_evento(fi: str) -> dict:
     data = _get("/bet365/event", {"FI": fi})
     resultados = data.get("results", [])
 
+    # A Betsapi retorna "results" com um nível de aninhamento a mais do
+    # que a documentação sugere: [[{...}, {...}, ...]] em vez de
+    # [{...}, {...}, ...]. Achatamos aqui (confirmado em 2026-08-19 com
+    # dado real -- sem isso, minuto_exato e odds_under vinham sempre
+    # vazios mesmo com a chamada funcionando).
+    if resultados and isinstance(resultados[0], list):
+        resultados = resultados[0]
+
     minuto_exato = _calcular_minuto_exato(resultados)
     odds_under = _extrair_odds_under(resultados)
 
@@ -167,7 +175,11 @@ def _calcular_minuto_exato(resultados: list) -> int | None:
                 tm = int(item.get("TM", 0))
                 ts = int(item.get("TS", 0))
                 tt = item.get("TT")
-                if tt:
+                # TT vem como STRING ("0" ou "1"), não bool -- "0" é uma
+                # string não-vazia e portanto truthy em Python, então
+                # comparamos o valor de verdade, não só a presença.
+                tempo_rolando = tt not in (None, "", "0", 0)
+                if tempo_rolando:
                     tu = item.get("TU", "")
                     segundos_desde_tu = _segundos_desde_tu(tu)
                     if segundos_desde_tu is not None:
