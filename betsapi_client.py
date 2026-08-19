@@ -211,25 +211,76 @@ def _segundos_desde_tu(tu: str) -> int | None:
 def _extrair_odds_under(resultados: list) -> dict:
     """
     Filtra, entre os markets retornados, as odds de Under gols que
-    interessam pra simulação. O nome/estrutura exata do market de
-    Under Total Goals precisa ser confirmado contra um evento real
-    de futebol em andamento -- os nomes usados aqui ("Under X.X
-    Goals" em NA) seguem o padrão comum do Bet365, mas podem variar.
+    interessam pra simulação.
+
+    A estrutura real (confirmada em 2026-08-19 com dado de jogo real)
+    é sequencial, não aninhada: um item 'MG' (market group) abre um
+    mercado (ex: NA='Goals Over/Under'), seguido por pares de itens
+    'MA' (a seleção, ex: NA='Over'/'Under') + 'PA' (o preço daquela
+    seleção, com 'HA' = linha/handicap e 'OD' = odd fracionária).
+    Percorremos a lista mantendo qual o último MG visto, e quando
+    achamos uma seleção 'Under' dentro de um grupo de gols, com uma
+    linha (HA) que bate com uma das nossas linhas simuladas, pegamos
+    o OD do PA seguinte.
+
+    Termos usados pra identificar o grupo certo (ex: 'Goals
+    Over/Under', 'Total Goals') ainda podem não cobrir 100% dos
+    nomes possíveis -- ajustar aqui se aparecerem variações novas.
     """
     odds_under = {}
+    grupo_atual = ""
+    selecao_atual = None  # "Over" ou "Under", da última MA vista
+
+    termos_grupo_gols = ["goals over/under", "total goals", "match goals"]
+    termos_grupo_excluir = ["corner", "card", "shootout", "penalt", "booking"]
+
     for item in resultados:
         if not isinstance(item, dict):
             continue
-        nome = item.get("NA", "")
-        if not nome:
+        tipo = item.get("type")
+
+        if tipo == "MG":
+            grupo_atual = (item.get("NA") or "").lower()
+            selecao_atual = None
             continue
-        for linha_alvo in config.LINHAS_SIMULADAS:
-            numero = linha_alvo.replace("Under ", "")
-            if "under" in nome.lower() and numero in nome:
+
+        if tipo == "MA":
+            nome_selecao = (item.get("NA") or "").strip().lower()
+            if nome_selecao in ("over", "under"):
+                selecao_atual = nome_selecao
+            else:
+                selecao_atual = None
+            continue
+
+        if tipo == "PA" and selecao_atual == "under":
+            grupo_e_de_gols = any(t in grupo_atual for t in termos_grupo_gols)
+            grupo_e_excluido = any(t in grupo_atual for t in termos_grupo_excluir)
+            if grupo_e_de_gols and not grupo_e_excluido:
+                linha_ha = item.get("HA")
                 od = item.get("OD")
-                if od:
-                    odds_under[linha_alvo] = _odd_fracionaria_para_decimal(od)
+                if linha_ha and od:
+                    linha_encontrada = _casar_linha_numerica(linha_ha)
+                    if linha_encontrada:
+                        odds_under[linha_encontrada] = _odd_fracionaria_para_decimal(od)
+
     return odds_under
+
+
+def _casar_linha_numerica(linha_ha: str):
+    """
+    Compara o valor numérico de HA com as linhas configuradas
+    (LINHAS_SIMULADAS), tolerando formatos diferentes de escrita do
+    mesmo número (ex: API manda '3.0', nós configuramos 'Under 3').
+    """
+    try:
+        valor_ha = float(linha_ha)
+    except (TypeError, ValueError):
+        return None
+    for linha_alvo in config.LINHAS_SIMULADAS:
+        numero_alvo = float(linha_alvo.replace("Under ", ""))
+        if abs(valor_ha - numero_alvo) < 0.001:
+            return linha_alvo
+    return None
 
 
 def _odd_fracionaria_para_decimal(od: str):
@@ -241,3 +292,4 @@ def _odd_fracionaria_para_decimal(od: str):
         return float(od)
     except Exception:
         return None
+

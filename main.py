@@ -190,7 +190,17 @@ def ciclo() -> None:
     # começado que achar, ignorando placar/minuto real. Serve só pra
     # validar o fluxo completo (Telegram + odds + simulação).
     if config.MODO_TESTE and not est.get("teste_ja_disparado"):
-        candidatos = [j for j in jogos if j["jogo_comecou"]]
+        # Evita jogos já em prorrogação/pênaltis (minuto estimado > 85),
+        # que não têm mais mercado normal de Under gols -- prioriza um
+        # jogo dentro do tempo normal pra validar o fluxo completo.
+        candidatos = [
+            j for j in jogos
+            if j["jogo_comecou"]
+            and j["minuto_estimado"] is not None
+            and 5 <= j["minuto_estimado"] <= 80
+        ]
+        if not candidatos:
+            candidatos = [j for j in jogos if j["jogo_comecou"]]
         if candidatos:
             print(f"[modo teste] Forçando alerta no jogo: "
                   f"{candidatos[0]['time_casa']} x {candidatos[0]['time_fora']}")
