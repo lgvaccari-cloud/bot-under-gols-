@@ -78,25 +78,40 @@ def processar_jogo(jogo: dict, est: dict, forcar_teste: bool = False) -> None:
     if not forcar_teste and not placar_bate:
         return
 
+    odds = detalhe["odds_under"]
+    print(f"[debug] Odds encontradas pro jogo {fi}: {odds}")
+
+    # só entram no alerta/simulação as linhas cuja odd está dentro da
+    # faixa configurada (ODD_MINIMA a ODD_MAXIMA) -- fora da faixa,
+    # a linha é ignorada mesmo que o placar bata o padrão.
+    linhas_na_faixa = {
+        linha: odd for linha, odd in odds.items()
+        if odd is not None and config.ODD_MINIMA <= odd <= config.ODD_MAXIMA
+    }
+
+    if not linhas_na_faixa and not forcar_teste:
+        print(f"[debug] Nenhuma linha dentro da faixa de odd "
+              f"({config.ODD_MINIMA}-{config.ODD_MAXIMA}) pro jogo {fi}, sem alerta.")
+        return
+
     minuto_exibido = minuto_exato if minuto_exato is not None else jogo["minuto_estimado"]
     prefixo_teste = "🧪 [MODO TESTE — ignora placar/minuto real] " if forcar_teste else ""
     descricao = f"{jogo['time_casa']} x {jogo['time_fora']} ({jogo['liga']})"
 
+    linhas_texto = "\n".join(
+        f"• {linha}: odd {odd}" for linha, odd in linhas_na_faixa.items()
+    ) if linhas_na_faixa else "(nenhuma linha na faixa de odd — modo teste)"
+
     texto_alerta = (
         f"{prefixo_teste}⚽ <b>{descricao}</b>\n"
         f"placar real: {jogo['gols_casa']}x{jogo['gols_fora']} aos ~{minuto_exibido}min\n\n"
-        f"Padrão batido — considerar Under 3.5 / 3 / 2.75"
+        f"Padrão batido — linhas na faixa de odd ({config.ODD_MINIMA}-{config.ODD_MAXIMA}):\n"
+        f"{linhas_texto}"
     )
     telegram_client.enviar_alerta(texto_alerta)
 
-    odds = detalhe["odds_under"]
-    print(f"[debug] Odds encontradas pro jogo {fi}: {odds}")
-    for linha in config.LINHAS_SIMULADAS:
-        odd = odds.get(linha)
-        if odd:
-            estado.registrar_aposta_simulada(est, fi, linha, odd, descricao)
-        else:
-            print(f"[simulacao] Odd de '{linha}' não encontrada pro jogo {fi}, pulando essa linha.")
+    for linha, odd in linhas_na_faixa.items():
+        estado.registrar_aposta_simulada(est, fi, linha, odd, descricao)
 
 
 def resolver_apostas_pendentes(est: dict) -> None:

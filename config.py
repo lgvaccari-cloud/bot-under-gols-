@@ -28,11 +28,20 @@ BETSAPI_BASE_URL = "https://api.b365api.com/v1"
 # ---------------------------------------------------------------------
 # Regra do padrão (gatilho do alerta)
 # ---------------------------------------------------------------------
-MINUTO_GATILHO = 21          # minuto do jogo em que verificamos o placar
+MINUTO_GATILHO = 23          # minuto do jogo em que verificamos o placar
 PLACAR_GATILHO = (0, 0)      # (gols_casa, gols_fora) que dispara o alerta
 
 # Linhas simuladas em paralelo (usadas só na simulação, não no alerta)
-LINHAS_SIMULADAS = ["Under 3.5", "Under 3", "Under 2.75"]
+LINHAS_SIMULADAS = [
+    "Under 4.5", "Under 4.25", "Under 4", "Under 3.75",
+    "Under 3.5", "Under 3.25", "Under 3", "Under 2.75",
+]
+
+# Só considera (alerta + simulação) uma linha cuja odd no momento do
+# gatilho esteja dentro dessa faixa -- fora da faixa, a linha é
+# ignorada mesmo que o placar bata o padrão.
+ODD_MINIMA = 1.72
+ODD_MAXIMA = 2.00
 
 # ---------------------------------------------------------------------
 # Filtro de competições a ignorar (categorias de base)
@@ -53,7 +62,7 @@ LIGAS_EXCLUIDAS_TERMOS = [
 # 2. só chamamos /bet365/event (que tem o relógio exato) pros jogos cujo
 #    minuto ESTIMADO já está dentro dessa janela ao redor do gatilho
 # ---------------------------------------------------------------------
-JANELA_CONFIRMACAO_MINUTOS = 3   # confirma exato entre (21-3) e (21+3) min estimados
+JANELA_CONFIRMACAO_MINUTOS = 3   # confirma exato entre (23-3) e (23+3) min estimados
 
 
 # ---------------------------------------------------------------------
@@ -80,5 +89,5 @@ ARQUIVO_ESTADO = "estado.json"
 # completo (mensagem no Telegram + busca de odds + registro da simulação)
 # sem precisar esperar um 0x0 de verdade no minuto 21.
 # IMPORTANTE: desligar (False) antes de rodar valendo de verdade.
-MODO_TESTE = True
+MODO_TESTE = False
 
