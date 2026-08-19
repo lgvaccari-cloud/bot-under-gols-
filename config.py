@@ -57,12 +57,18 @@ LIGAS_EXCLUIDAS_TERMOS = [
 ]
 
 # ---------------------------------------------------------------------
-# Estratégia de checagem em 2 estágios (economiza chamadas de API):
+# Estratégia de checagem (economiza chamadas de API):
 # 1. /inplay_filter dá o horário de início -> estimamos o minuto de graça
-# 2. só chamamos /bet365/event (que tem o relógio exato) pros jogos cujo
-#    minuto ESTIMADO já está dentro dessa janela ao redor do gatilho
+# 2. só chamamos /bet365/event (que tem o relógio exato + odds) pros
+#    jogos cujo minuto ESTIMADO já passou perto do gatilho
+# 3. IMPORTANTE: as odds mudam a cada instante -- um jogo 0x0 pode não
+#    ter nenhuma linha na faixa de odd exatamente no minuto 23, mas
+#    ter alguns minutos depois (ou vice-versa). Por isso, em vez de
+#    checar só uma vez e desistir, RECHECAMOS a cada ciclo enquanto o
+#    jogo continuar 0x0, do minuto MINUTO_GATILHO até MINUTO_LIMITE.
 # ---------------------------------------------------------------------
-JANELA_CONFIRMACAO_MINUTOS = 3   # confirma exato entre (23-3) e (23+3) min estimados
+JANELA_CONFIRMACAO_MINUTOS = 3   # começa a checar de graça a partir do minuto 20 (23-3)
+MINUTO_LIMITE_RECHECK = 26       # para de tentar depois desse minuto (mesmo se 0x0 ainda)
 
 
 # ---------------------------------------------------------------------
