@@ -62,12 +62,18 @@ LIGAS_EXCLUIDAS_TERMOS = [
 # 2. só chamamos /bet365/event (que tem o relógio exato + odds) pros
 #    jogos cujo minuto ESTIMADO já passou perto do gatilho
 # 3. IMPORTANTE: as odds mudam a cada instante -- um jogo 0x0 pode não
-#    ter nenhuma linha na faixa de odd exatamente no minuto 23, mas
+#    ter nenhuma linha na faixa de odd exatamente no minuto 21, mas
 #    ter alguns minutos depois (ou vice-versa). Por isso, em vez de
 #    checar só uma vez e desistir, RECHECAMOS a cada ciclo enquanto o
 #    jogo continuar 0x0, do minuto MINUTO_GATILHO até MINUTO_LIMITE.
+# 4. A estimativa de minuto é calculada a partir do horário PROGRAMADO
+#    do jogo -- se o jogo começou atrasado (comum, principalmente em
+#    ligas menores), a estimativa fica inflada e o jogo pode nunca
+#    entrar na janela de confirmação, sendo pulado silenciosamente
+#    desde o início (confirmado em 2026-08-19 com um caso real).
+#    JANELA_CONFIRMACAO_MINUTOS alargada bem generosa pra tolerar isso.
 # ---------------------------------------------------------------------
-JANELA_CONFIRMACAO_MINUTOS = 3   # começa a checar de graça a partir do minuto 20 (23-3)
+JANELA_CONFIRMACAO_MINUTOS = 8   # começa a checar de graça a partir do minuto 13 (21-8)
 MINUTO_LIMITE_RECHECK = 26       # para de tentar depois desse minuto (mesmo se 0x0 ainda)
 
 
@@ -93,7 +99,12 @@ HORARIO_RELATORIO_DIARIO = "23:55"  # horário (HH:MM, fuso do servidor) do resu
 
 # Arquivo onde o estado persiste entre reinicializações do processo
 # (jogos já notificados, apostas simuladas em aberto, histórico)
-ARQUIVO_ESTADO = "estado.json"
+# Caminho do arquivo de estado -- em produção (Render com disco
+# persistente), define DISCO_PERSISTENTE_PATH apontando pro diretório
+# montado do disco (ex: /var/data), senão usa o diretório local (que
+# se perde a cada redeploy, ok só pra teste).
+_pasta_estado = os.environ.get("DISCO_PERSISTENTE_PATH", ".")
+ARQUIVO_ESTADO = os.path.join(_pasta_estado, "estado.json")
 
 # ---------------------------------------------------------------------
 # Modo teste (temporário)
@@ -103,5 +114,5 @@ ARQUIVO_ESTADO = "estado.json"
 # completo (mensagem no Telegram + busca de odds + registro da simulação)
 # sem precisar esperar um 0x0 de verdade no minuto 21.
 # IMPORTANTE: desligar (False) antes de rodar valendo de verdade.
-MODO_TESTE = False
+MODO_TESTE = True
 

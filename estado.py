@@ -54,6 +54,7 @@ def jogo_ja_verificado(estado: dict, fi: str) -> bool:
 
 def registrar_aposta_simulada(estado: dict, fi: str, linha, odd: float,
                                jogo_descricao: str, liga: str = "") -> None:
+    data_entrada = datetime.now().isoformat()
     estado["apostas_abertas"].append({
         "fi": fi,
         "linha": linha,       # numérico (ex: 2.75, 3, 3.5) -- não mais "Under X"
@@ -61,8 +62,10 @@ def registrar_aposta_simulada(estado: dict, fi: str, linha, odd: float,
         "stake": config.STAKE_UNIDADE,
         "jogo": jogo_descricao,
         "liga": liga,          # separado, pra dar pra filtrar por campeonato depois
-        "data_entrada": datetime.now().isoformat(),
+        "data_entrada": data_entrada,
+        "id_aposta": f"{fi}_{linha}_{data_entrada}",  # único, usado na planilha
     })
+
 
 
 def _resultado_perna(gols_totais_final: int, linha_perna: float) -> str:

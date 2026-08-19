@@ -97,25 +97,35 @@ def processar_jogo(jogo: dict, est: dict, forcar_teste: bool = False) -> None:
     descricao_debug = f"{jogo['time_casa']} x {jogo['time_fora']}"
     print(f"[debug] Odds encontradas pro jogo {fi} ({descricao_debug}, minuto {minuto_exato}): {odds}")
 
-    # só entram no alerta/simulação as linhas cuja odd está dentro da
-    # faixa configurada (ODD_MINIMA a ODD_MAXIMA) -- fora da faixa,
-    # a linha é ignorada mesmo que o placar bata o padrão. Se várias
-    # linhas caírem na faixa, escolhemos só UMA: a de odd mais próxima
-    # de 1.90 (não manda várias linhas no mesmo alerta).
-    candidatas = {
-        linha: odd for linha, odd in odds.items()
-        if odd is not None and config.ODD_MINIMA <= odd <= config.ODD_MAXIMA
-    }
+    if forcar_teste:
+        # modo teste: força TODAS as linhas de 1.5 a 4.5 (passo 0.25,
+        # incluindo as quebradas/asiáticas: 1.75, 2.25, 2.75 etc),
+        # com odd sintética -- valida o fluxo completo (Telegram +
+        # planilha, entrada e depois resultado) em vários cenários de
+        # placar de uma vez só, incluindo Void/Meio Green/Meio Red.
+        linhas_teste = [1.5, 1.75, 2.0, 2.25, 2.5, 2.75, 3.0,
+                        3.25, 3.5, 3.75, 4.0, 4.25, 4.5]
+        linhas_na_faixa = {linha: 1.90 for linha in linhas_teste}
+    else:
+        # só entram no alerta/simulação as linhas cuja odd está dentro da
+        # faixa configurada (ODD_MINIMA a ODD_MAXIMA) -- fora da faixa,
+        # a linha é ignorada mesmo que o placar bata o padrão. Se várias
+        # linhas caírem na faixa, escolhemos só UMA: a de odd mais próxima
+        # de 1.90 (não manda várias linhas no mesmo alerta).
+        candidatas = {
+            linha: odd for linha, odd in odds.items()
+            if odd is not None and config.ODD_MINIMA <= odd <= config.ODD_MAXIMA
+        }
 
-    linhas_na_faixa = {}
-    if candidatas:
-        melhor_linha = min(candidatas, key=lambda l: abs(candidatas[l] - 1.90))
-        linhas_na_faixa = {melhor_linha: candidatas[melhor_linha]}
+        linhas_na_faixa = {}
+        if candidatas:
+            melhor_linha = min(candidatas, key=lambda l: abs(candidatas[l] - 1.90))
+            linhas_na_faixa = {melhor_linha: candidatas[melhor_linha]}
 
-    if not linhas_na_faixa and not forcar_teste:
-        print(f"[debug] Nenhuma linha na faixa de odd pro jogo {fi} no minuto {minuto_exato} "
-              f"-- tenta de novo no próximo ciclo (ainda dentro do limite de recheck).")
-        return  # NÃO marca como verificado -- tenta de novo no próximo ciclo
+        if not linhas_na_faixa:
+            print(f"[debug] Nenhuma linha na faixa de odd pro jogo {fi} no minuto {minuto_exato} "
+                  f"-- tenta de novo no próximo ciclo (ainda dentro do limite de recheck).")
+            return  # NÃO marca como verificado -- tenta de novo no próximo ciclo
 
     # a partir daqui, ou disparou o alerta, ou (modo teste) segue mesmo
     # sem linha -- de qualquer forma, esse jogo está resolvido
@@ -137,6 +147,8 @@ def processar_jogo(jogo: dict, est: dict, forcar_teste: bool = False) -> None:
 
     for linha, odd in linhas_na_faixa.items():
         estado.registrar_aposta_simulada(est, fi, linha, odd, descricao, liga=jogo["liga"])
+        aposta_recem_criada = est["apostas_abertas"][-1]
+
         texto_entrada = (
             f"📝 ENTRADA REGISTRADA\n"
             f"{descricao}\n"
@@ -144,6 +156,15 @@ def processar_jogo(jogo: dict, est: dict, forcar_teste: bool = False) -> None:
             f"Aguardando resultado..."
         )
         telegram_client.enviar_relatorio_simulacao(texto_entrada)
+
+        sheets_client.registrar_entrada(
+            id_aposta=aposta_recem_criada["id_aposta"],
+            data_hora=aposta_recem_criada["data_entrada"],
+            campeonato=jogo["liga"],
+            partida=descricao,
+            linha=linha,
+            odd=odd,
+        )
 
 
 def resolver_apostas_pendentes(est: dict) -> None:
@@ -187,12 +208,8 @@ def resolver_apostas_pendentes(est: dict) -> None:
         )
         telegram_client.enviar_relatorio_simulacao(texto)
 
-        sheets_client.registrar_linha(
-            data_hora=resolvida["data_resolucao"],
-            campeonato=aposta.get("liga", ""),
-            partida=aposta["jogo"],
-            linha=aposta["linha"],
-            odd=aposta["odd"],
+        sheets_client.atualizar_resultado(
+            id_aposta=aposta.get("id_aposta", ""),
             resultado=resolvida["resultado"],
             lucro_reais=resolvida["lucro"],
         )

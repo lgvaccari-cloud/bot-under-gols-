@@ -34,23 +34,45 @@ class BetsapiError(Exception):
     pass
 
 
-def _get(path: str, params: dict) -> dict:
+def _get(path: str, params: dict, tentativas: int = 2) -> dict:
+    """
+    Chama a Betsapi com retry automático em caso de timeout/erro de
+    conexão -- a API deles tem instabilidade intermitente (confirmado
+    em 2026-08-19, vários "Read timed out" em produção), e um jogo
+    dentro da janela certa pode passar batido se a única tentativa
+    falhar bem naquele ciclo.
+    """
     params = {**params, "token": config.BETSAPI_TOKEN}
     url = f"{config.BETSAPI_BASE_URL}{path}"
-    resp = requests.get(url, params=params, timeout=15)
-    resp.raise_for_status()
-    data = resp.json()
-    if data.get("success") != 1:
-        raise BetsapiError(f"Betsapi retornou erro em {path}: {data}")
-    return data
+
+    ultimo_erro = None
+    for tentativa in range(1, tentativas + 1):
+        try:
+            resp = requests.get(url, params=params, timeout=15)
+            resp.raise_for_status()
+            data = resp.json()
+            if data.get("success") != 1:
+                raise BetsapiError(f"Betsapi retornou erro em {path}: {data}")
+            return data
+        except (requests.exceptions.RequestException, BetsapiError) as e:
+            ultimo_erro = e
+            if tentativa < tentativas:
+                print(f"[aviso] Tentativa {tentativa} falhou pra {path} ({e}), tentando de novo...")
+    raise ultimo_erro
 
 
-def listar_jogos_ao_vivo(sport_id: int = 1) -> list[dict]:
+def listar_jogos_ao_vivo(sport_id: int = 1, max_paginas: int = 20) -> list[dict]:
     """
     Retorna a lista de jogos de futebol ao vivo agora, com placar e
     MINUTO ESTIMADO (calculado a partir do horário de início -- é uma
     aproximação sem gastar chamada de API extra; ver
     obter_detalhe_evento() pra confirmar com precisão quando necessário).
+
+    Pagina até acabar os resultados -- em horário de pico pode ter
+    mais jogos ao vivo no mundo do que cabe numa página só, e sem
+    paginar a gente perdia jogos silenciosamente (confirmado em
+    2026-08-19: um jogo de futebol feminino argentino nunca apareceu
+    em nenhum log, mesmo bem dentro do padrão).
 
     Cada item normalizado:
     {
@@ -64,12 +86,26 @@ def listar_jogos_ao_vivo(sport_id: int = 1) -> list[dict]:
         "jogo_comecou": bool,  # False se "ss" ainda é null
     }
     """
-    data = _get("/bet365/inplay_filter", {"sport_id": sport_id})
     jogos = []
-    for item in data.get("results", []):
-        jogo = _normalizar_evento_inplay(item)
-        if jogo is not None:
-            jogos.append(jogo)
+    pagina = 1
+    while pagina <= max_paginas:
+        data = _get("/bet365/inplay_filter", {"sport_id": sport_id, "page": pagina})
+        resultados = data.get("results", [])
+        if not resultados:
+            break
+
+        for item in resultados:
+            jogo = _normalizar_evento_inplay(item)
+            if jogo is not None:
+                jogos.append(jogo)
+
+        pager = data.get("pager", {})
+        total = pager.get("total", 0)
+        por_pagina = pager.get("per_page", len(resultados))
+        if pagina * por_pagina >= total:
+            break
+        pagina += 1
+
     return jogos
 
 
@@ -130,6 +166,44 @@ def _estimar_minuto(kickoff_timestamp) -> int | None:
         return decorrido_min
     except (TypeError, ValueError):
         return None
+
+
+def obter_placar_final(fi: str):
+    """
+    Busca o placar final de um jogo já encerrado via /bet365/result.
+    Retorna (gols_casa, gols_fora) ou None se ainda não tiver resultado
+    disponível (jogo pode ter sido adiado, cancelado, ou a Betsapi
+    ainda não processou o resultado).
+
+    Formato da resposta ainda não confirmado com dado real -- essa
+    implementação segue o mesmo padrão de /inplay_filter (campo "ss"
+    tipo "1-2"), com achatamento de aninhamento por segurança (mesmo
+    problema que já vimos em outros endpoints Bet365).
+    """
+    try:
+        data = _get("/bet365/result", {"event_id": fi})
+    except BetsapiError as e:
+        print(f"[debug] /bet365/result sem resultado ainda pro jogo {fi}: {e}")
+        return None
+
+    resultados = data.get("results", [])
+    if resultados and isinstance(resultados[0], list):
+        resultados = resultados[0]
+
+    for item in resultados:
+        if not isinstance(item, dict):
+            continue
+        ss = item.get("ss")
+        if ss and "-" in str(ss):
+            try:
+                casa, fora = str(ss).split("-")
+                return int(casa), int(fora)
+            except (ValueError, TypeError):
+                continue
+
+    print(f"[debug] /bet365/result não trouxe placar reconhecível pro jogo {fi}. "
+          f"Resposta bruta (primeiros 3 itens): {resultados[:3]}")
+    return None
 
 
 def obter_detalhe_evento(fi: str) -> dict:
@@ -273,7 +347,8 @@ def _casar_linha_numerica(linha_ha: str):
     """
     Compara o valor numérico de HA com as linhas configuradas
     (LINHAS_SIMULADAS), tolerando formatos diferentes de escrita do
-    mesmo número (ex: API manda '3.0', nós configuramos 'Under 3').
+    mesmo número (ex: API manda '3.0', nós comparamos com 3).
+    Retorna o número puro (float), não mais o texto "Under X".
     """
     try:
         valor_ha = float(linha_ha)
@@ -282,7 +357,7 @@ def _casar_linha_numerica(linha_ha: str):
     for linha_alvo in config.LINHAS_SIMULADAS:
         numero_alvo = float(linha_alvo.replace("Under ", ""))
         if abs(valor_ha - numero_alvo) < 0.001:
-            return linha_alvo
+            return numero_alvo
     return None
 
 
