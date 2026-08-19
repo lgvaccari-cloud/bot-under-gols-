@@ -25,6 +25,7 @@ import config
 import estado
 import betsapi_client
 import telegram_client
+import sheets_client
 
 
 def liga_excluida(nome_liga: str) -> bool:
@@ -135,7 +136,7 @@ def processar_jogo(jogo: dict, est: dict, forcar_teste: bool = False) -> None:
     telegram_client.enviar_alerta(texto_alerta)
 
     for linha, odd in linhas_na_faixa.items():
-        estado.registrar_aposta_simulada(est, fi, linha, odd, descricao)
+        estado.registrar_aposta_simulada(est, fi, linha, odd, descricao, liga=jogo["liga"])
 
 
 def resolver_apostas_pendentes(est: dict) -> None:
@@ -156,26 +157,48 @@ def resolver_apostas_pendentes(est: dict) -> None:
             ainda_abertas.append(aposta)
             continue
 
-        # TODO: jogo não está mais na lista de ao vivo -- assumimos
-        # encerrado, mas ainda falta confirmar o placar final oficial
-        # (essa lista só cobre jogos em andamento, não dá o resultado).
-        # Próximo passo: integrar /bet365/result?event_id=... pra pegar
-        # o placar final real antes de apurar a aposta.
+        # jogo não está mais na lista de ao vivo -- assumimos encerrado
+        # e buscamos o placar final oficial via /bet365/result.
         gols_totais_final = _placar_final_estimado(fi)
         if gols_totais_final is None:
             ainda_abertas.append(aposta)
             continue
 
         resolvida = estado.resolver_aposta(est, aposta, gols_totais_final)
-        emoji = "✅" if resolvida["resultado"] == "green" else "❌"
+        emojis_resultado = {
+            "green": "✅", "red": "❌", "void": "⚪",
+            "meio green": "🟢", "meio red": "🔴",
+        }
+        emoji = emojis_resultado.get(resolvida["resultado"], "❔")
         print(f"{emoji} {aposta['linha']} | {aposta['jogo']} | lucro: R${resolvida['lucro']}")
+
+        texto = (
+            f"{emoji} {resolvida['resultado'].upper()}\n"
+            f"{aposta['jogo']}\n"
+            f"{aposta['linha']} @{aposta['odd']:.2f} | stake R${aposta['stake']:.2f}\n"
+            f"Placar final: {gols_totais_final} gols | Lucro: R${resolvida['lucro']:+.2f}"
+        )
+        telegram_client.enviar_relatorio_simulacao(texto)
+
+        sheets_client.registrar_linha(
+            data_hora=resolvida["data_resolucao"],
+            campeonato=aposta.get("liga", ""),
+            partida=aposta["jogo"],
+            linha=aposta["linha"],
+            odd=aposta["odd"],
+            resultado=resolvida["resultado"],
+            lucro_reais=resolvida["lucro"],
+        )
 
     est["apostas_abertas"] = ainda_abertas
 
 
 def _placar_final_estimado(fi: str):
-    """Placeholder -- ver TODO acima. Ainda não implementado."""
-    return None
+    resultado = betsapi_client.obter_placar_final(fi)
+    if resultado is None:
+        return None
+    gols_casa, gols_fora = resultado
+    return gols_casa + gols_fora
 
 
 def enviar_relatorio_diario_se_necessario(est: dict) -> None:
@@ -187,26 +210,28 @@ def enviar_relatorio_diario_se_necessario(est: dict) -> None:
     if agora < config.HORARIO_RELATORIO_DIARIO:
         return
 
-    linhas_relatorio = [f"📊 <b>Relatório diário — {hoje}</b>\n"]
-    for linha in config.LINHAS_SIMULADAS:
-        banca_atual = est["banca"][linha]
-        lucro_total = banca_atual - config.BANCA_INICIAL
-        apostas_hoje = [
-            a for a in est["apostas_resolvidas"]
-            if a["linha"] == linha and a["data_resolucao"].startswith(hoje)
-        ]
-        greens = sum(1 for a in apostas_hoje if a["resultado"] == "green")
-        reds = sum(1 for a in apostas_hoje if a["resultado"] == "red")
+    banca_atual = est["banca"]
+    lucro_total_acumulado = banca_atual - config.BANCA_INICIAL
 
-        linhas_relatorio.append(
-            f"\n<b>{linha}</b>\n"
-            f"Entradas hoje: {len(apostas_hoje)} ({greens}✅ / {reds}❌)\n"
-            f"Banca atual: R${banca_atual:,.2f}\n"
-            f"Lucro acumulado: R${lucro_total:,.2f}"
-        )
+    apostas_hoje = [
+        a for a in est["apostas_resolvidas"]
+        if a["data_resolucao"].startswith(hoje)
+    ]
+    greens = sum(1 for a in apostas_hoje if a["resultado"] == "green")
+    reds = sum(1 for a in apostas_hoje if a["resultado"] == "red")
+    lucro_hoje = sum(a["lucro"] for a in apostas_hoje)
 
-    telegram_client.enviar_relatorio_simulacao("\n".join(linhas_relatorio))
+    texto_relatorio = (
+        f"📊 Relatório diário — {hoje}\n\n"
+        f"Entradas hoje: {len(apostas_hoje)} ({greens}✅ / {reds}❌)\n"
+        f"Lucro hoje: R${lucro_hoje:+.2f}\n\n"
+        f"Banca atual: R${banca_atual:,.2f}\n"
+        f"Lucro acumulado: R${lucro_total_acumulado:+,.2f}"
+    )
+
+    telegram_client.enviar_relatorio_simulacao(texto_relatorio)
     est["ultimo_relatorio_enviado"] = hoje
+
 
 
 def ciclo() -> None:

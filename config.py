@@ -78,6 +78,14 @@ BANCA_INICIAL = 100_000.00   # R$100.000
 STAKE_UNIDADE = 1_000.00     # R$1.000 = 1 unidade por entrada
 
 # ---------------------------------------------------------------------
+# Google Sheets (registro das apostas simuladas, com campeonato
+# separado numa coluna, pra dar pra filtrar por liga depois de
+# acumular volume)
+# ---------------------------------------------------------------------
+GOOGLE_SERVICE_ACCOUNT_JSON = os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON", "")
+GOOGLE_SHEET_ID = os.environ.get("GOOGLE_SHEET_ID", "")
+
+# ---------------------------------------------------------------------
 # Operação
 # ---------------------------------------------------------------------
 INTERVALO_POLLING_SEGUNDOS = 30   # frequência de checagem dos jogos ao vivo
