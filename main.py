@@ -39,13 +39,13 @@ def dentro_da_janela_de_confirmacao(minuto_estimado) -> bool:
     return diff <= config.JANELA_CONFIRMACAO_MINUTOS
 
 
-def processar_jogo(jogo: dict, est: dict) -> None:
+def processar_jogo(jogo: dict, est: dict, forcar_teste: bool = False) -> None:
     fi = jogo["fi"]
     if estado.jogo_ja_verificado(est, fi):
         return
     if not jogo["jogo_comecou"]:
         return
-    if not dentro_da_janela_de_confirmacao(jogo["minuto_estimado"]):
+    if not forcar_teste and not dentro_da_janela_de_confirmacao(jogo["minuto_estimado"]):
         return  # ainda longe do gatilho (ou já passou muito) -- barato, sem chamada extra
 
     # a partir daqui vale a pena gastar uma chamada de API pra confirmar
@@ -64,9 +64,10 @@ def processar_jogo(jogo: dict, est: dict) -> None:
         print(f"[debug] Não consegui calcular minuto exato do jogo {fi} "
               f"({jogo['time_casa']} x {jogo['time_fora']}). "
               f"Resposta bruta (primeiros 3 itens): {detalhe.get('_bruto_debug', [])[:3]}")
-        return
+        if not forcar_teste:
+            return
 
-    if minuto_exato < config.MINUTO_GATILHO:
+    if not forcar_teste and minuto_exato < config.MINUTO_GATILHO:
         return  # ainda não chegou -- tenta de novo no próximo ciclo
 
     # a partir daqui, ou bate o padrão agora, ou nunca mais vai bater
@@ -74,19 +75,22 @@ def processar_jogo(jogo: dict, est: dict) -> None:
     estado.marcar_jogo_verificado(est, fi)
 
     placar_bate = (jogo["gols_casa"], jogo["gols_fora"]) == config.PLACAR_GATILHO
-    if not placar_bate:
+    if not forcar_teste and not placar_bate:
         return
 
+    minuto_exibido = minuto_exato if minuto_exato is not None else jogo["minuto_estimado"]
+    prefixo_teste = "🧪 [MODO TESTE — ignora placar/minuto real] " if forcar_teste else ""
     descricao = f"{jogo['time_casa']} x {jogo['time_fora']} ({jogo['liga']})"
 
     texto_alerta = (
-        f"⚽ <b>{descricao}</b>\n"
-        f"0x0 aos {minuto_exato}min\n\n"
+        f"{prefixo_teste}⚽ <b>{descricao}</b>\n"
+        f"placar real: {jogo['gols_casa']}x{jogo['gols_fora']} aos ~{minuto_exibido}min\n\n"
         f"Padrão batido — considerar Under 3.5 / 3 / 2.75"
     )
     telegram_client.enviar_alerta(texto_alerta)
 
     odds = detalhe["odds_under"]
+    print(f"[debug] Odds encontradas pro jogo {fi}: {odds}")
     for linha in config.LINHAS_SIMULADAS:
         odd = odds.get(linha)
         if odd:
@@ -181,6 +185,19 @@ def ciclo() -> None:
 
     for jogo in jogos:
         processar_jogo(jogo, est)
+
+    # MODO TESTE: força o alerta uma única vez, no primeiro jogo já
+    # começado que achar, ignorando placar/minuto real. Serve só pra
+    # validar o fluxo completo (Telegram + odds + simulação).
+    if config.MODO_TESTE and not est.get("teste_ja_disparado"):
+        candidatos = [j for j in jogos if j["jogo_comecou"]]
+        if candidatos:
+            print(f"[modo teste] Forçando alerta no jogo: "
+                  f"{candidatos[0]['time_casa']} x {candidatos[0]['time_fora']}")
+            processar_jogo(candidatos[0], est, forcar_teste=True)
+            est["teste_ja_disparado"] = True
+        else:
+            print("[modo teste] Nenhum jogo já começado encontrado ainda, tentando de novo no próximo ciclo.")
 
     resolver_apostas_pendentes(est)
     enviar_relatorio_diario_se_necessario(est)

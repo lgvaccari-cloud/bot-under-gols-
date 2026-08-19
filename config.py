@@ -71,3 +71,14 @@ HORARIO_RELATORIO_DIARIO = "23:55"  # horário (HH:MM, fuso do servidor) do resu
 # Arquivo onde o estado persiste entre reinicializações do processo
 # (jogos já notificados, apostas simuladas em aberto, histórico)
 ARQUIVO_ESTADO = "estado.json"
+
+# ---------------------------------------------------------------------
+# Modo teste (temporário)
+# ---------------------------------------------------------------------
+# Se True, IGNORA o placar/minuto reais e força o alerta a disparar no
+# primeiro jogo ao vivo elegível que encontrar -- só pra validar o fluxo
+# completo (mensagem no Telegram + busca de odds + registro da simulação)
+# sem precisar esperar um 0x0 de verdade no minuto 21.
+# IMPORTANTE: desligar (False) antes de rodar valendo de verdade.
+MODO_TESTE = True
+
