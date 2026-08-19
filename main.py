@@ -137,6 +137,13 @@ def processar_jogo(jogo: dict, est: dict, forcar_teste: bool = False) -> None:
 
     for linha, odd in linhas_na_faixa.items():
         estado.registrar_aposta_simulada(est, fi, linha, odd, descricao, liga=jogo["liga"])
+        texto_entrada = (
+            f"📝 ENTRADA REGISTRADA\n"
+            f"{descricao}\n"
+            f"Under {linha} @{odd:.2f} | stake R${config.STAKE_UNIDADE:.2f}\n"
+            f"Aguardando resultado..."
+        )
+        telegram_client.enviar_relatorio_simulacao(texto_entrada)
 
 
 def resolver_apostas_pendentes(est: dict) -> None:
