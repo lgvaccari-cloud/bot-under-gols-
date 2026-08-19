@@ -98,11 +98,18 @@ def processar_jogo(jogo: dict, est: dict, forcar_teste: bool = False) -> None:
 
     # só entram no alerta/simulação as linhas cuja odd está dentro da
     # faixa configurada (ODD_MINIMA a ODD_MAXIMA) -- fora da faixa,
-    # a linha é ignorada mesmo que o placar bata o padrão.
-    linhas_na_faixa = {
+    # a linha é ignorada mesmo que o placar bata o padrão. Se várias
+    # linhas caírem na faixa, escolhemos só UMA: a de odd mais próxima
+    # de 1.90 (não manda várias linhas no mesmo alerta).
+    candidatas = {
         linha: odd for linha, odd in odds.items()
         if odd is not None and config.ODD_MINIMA <= odd <= config.ODD_MAXIMA
     }
+
+    linhas_na_faixa = {}
+    if candidatas:
+        melhor_linha = min(candidatas, key=lambda l: abs(candidatas[l] - 1.90))
+        linhas_na_faixa = {melhor_linha: candidatas[melhor_linha]}
 
     if not linhas_na_faixa and not forcar_teste:
         print(f"[debug] Nenhuma linha na faixa de odd pro jogo {fi} no minuto {minuto_exato} "
@@ -113,18 +120,16 @@ def processar_jogo(jogo: dict, est: dict, forcar_teste: bool = False) -> None:
     # sem linha -- de qualquer forma, esse jogo está resolvido
     estado.marcar_jogo_verificado(est, fi)
 
-    minuto_exibido = minuto_exato if minuto_exato is not None else jogo["minuto_estimado"]
-    prefixo_teste = "🧪 [MODO TESTE — ignora placar/minuto real] " if forcar_teste else ""
+    prefixo_teste = "🧪 [MODO TESTE] " if forcar_teste else ""
     descricao = f"{jogo['time_casa']} x {jogo['time_fora']} ({jogo['liga']})"
 
     linhas_texto = "\n".join(
-        f"• {linha}: odd {odd}" for linha, odd in linhas_na_faixa.items()
+        f"Under {linha} @{odd:.2f}" for linha, odd in linhas_na_faixa.items()
     ) if linhas_na_faixa else "(nenhuma linha na faixa de odd — modo teste)"
 
     texto_alerta = (
-        f"{prefixo_teste}⚽ <b>{descricao}</b>\n"
-        f"placar real: {jogo['gols_casa']}x{jogo['gols_fora']} aos ~{minuto_exibido}min\n\n"
-        f"Padrão batido — linhas na faixa de odd ({config.ODD_MINIMA}-{config.ODD_MAXIMA}):\n"
+        f"{prefixo_teste}{jogo['time_casa']} x {jogo['time_fora']}\n"
+        f"{jogo['liga']}\n"
         f"{linhas_texto}"
     )
     telegram_client.enviar_alerta(texto_alerta)

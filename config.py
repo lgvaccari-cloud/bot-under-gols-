@@ -28,7 +28,7 @@ BETSAPI_BASE_URL = "https://api.b365api.com/v1"
 # ---------------------------------------------------------------------
 # Regra do padrão (gatilho do alerta)
 # ---------------------------------------------------------------------
-MINUTO_GATILHO = 10          # TEMPORÁRIO (teste): normalmente 21 -- ampliado pra achar mais candidatos
+MINUTO_GATILHO = 21          # minuto do jogo em que verificamos o placar
 PLACAR_GATILHO = (0, 0)      # (gols_casa, gols_fora) que dispara o alerta
 
 # Linhas simuladas em paralelo (usadas só na simulação, não no alerta)
@@ -68,7 +68,7 @@ LIGAS_EXCLUIDAS_TERMOS = [
 #    jogo continuar 0x0, do minuto MINUTO_GATILHO até MINUTO_LIMITE.
 # ---------------------------------------------------------------------
 JANELA_CONFIRMACAO_MINUTOS = 3   # começa a checar de graça a partir do minuto 20 (23-3)
-MINUTO_LIMITE_RECHECK = 40       # para de tentar depois desse minuto (mesmo se 0x0 ainda)
+MINUTO_LIMITE_RECHECK = 26       # para de tentar depois desse minuto (mesmo se 0x0 ainda)
 
 
 # ---------------------------------------------------------------------
