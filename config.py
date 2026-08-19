@@ -68,7 +68,7 @@ LIGAS_EXCLUIDAS_TERMOS = [
 #    jogo continuar 0x0, do minuto MINUTO_GATILHO até MINUTO_LIMITE.
 # ---------------------------------------------------------------------
 JANELA_CONFIRMACAO_MINUTOS = 3   # começa a checar de graça a partir do minuto 20 (23-3)
-MINUTO_LIMITE_RECHECK = 26       # para de tentar depois desse minuto (mesmo se 0x0 ainda)
+MINUTO_LIMITE_RECHECK = 40       # para de tentar depois desse minuto (mesmo se 0x0 ainda)
 
 
 # ---------------------------------------------------------------------
