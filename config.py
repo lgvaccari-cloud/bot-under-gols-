@@ -114,5 +114,5 @@ ARQUIVO_ESTADO = os.path.join(_pasta_estado, "estado.json")
 # completo (mensagem no Telegram + busca de odds + registro da simulação)
 # sem precisar esperar um 0x0 de verdade no minuto 21.
 # IMPORTANTE: desligar (False) antes de rodar valendo de verdade.
-MODO_TESTE = True
+MODO_TESTE = False
 
