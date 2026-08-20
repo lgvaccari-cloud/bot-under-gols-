@@ -48,7 +48,7 @@ def dentro_da_janela_de_confirmacao(minuto_estimado) -> bool:
 
 def processar_jogo(jogo: dict, est: dict, forcar_teste: bool = False) -> None:
     fi = jogo["fi"]
-    if estado.jogo_ja_verificado(est, fi):
+    if not forcar_teste and estado.jogo_ja_verificado(est, fi):
         return
     if not jogo["jogo_comecou"]:
         return
